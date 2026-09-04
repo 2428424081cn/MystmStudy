@@ -6,9 +6,9 @@
 #define OLED_WIDTH   128
 #define OLED_HEIGHT  64
 
-/* 屏幕通道选择 */
-#define OLED_SCREEN_L     0   /* 屏幕1: 左眼 (SCL=PB6,  SDA=PB7) */
-#define OLED_SCREEN_R     1   /* 屏幕2: 右眼 (SCL=PB11, SDA=PB8) */
+/* 屏幕通道选择 (根据硬件物理摆放: 屏幕2在左侧, 屏幕1在右侧) */
+#define OLED_SCREEN_L     1   /* 物理左屏: 屏幕2 (SCL=PB11, SDA=PB8) */
+#define OLED_SCREEN_R     0   /* 物理右屏: 屏幕1 (SCL=PB6,  SDA=PB7) */
 #define OLED_SCREEN_BOTH  2   /* 双屏同时操作 */
 
 /* 颜色定义 (单色 OLED) */

@@ -2,9 +2,10 @@
  ******************************************************************************
  * @file           : main.c
  * @brief          : 双屏呆萌冷脸萌 (Dual-Screen Fumo ᗜ - ᗜ) 活体桌宠
- *                   屏幕1 (左屏): SCL=PB6,  SDA=PB7
- *                   屏幕2 (右屏): SCL=PB11, SDA=PB8
- *                   双屏双子萌互动 / 纯正空心 ᗜ 经典呆萌表情 / 80+ FPS 极限刷新
+ *                   物理摆放:
+ *                     左侧屏 (屏幕2): SCL=PB11, SDA=PB8  (OLED_SCREEN_L)
+ *                     右侧屏 (屏幕1): SCL=PB6,  SDA=PB7  (OLED_SCREEN_R)
+ *                   双屏双子萌互动 / 跨屏合体大脸 / 80+ FPS 极限刷新
  ******************************************************************************
  */
 
@@ -231,7 +232,8 @@ static void Draw_Peace_Hand(uint8_t x, uint8_t y, uint8_t mirror)
 }
 
 /**
- * @brief 渲染一只完整的呆萌冷脸萌桌面宠面孔 (TWIN 模式单屏完整渲染)
+ * @brief 渲染单屏完整的呆萌冷脸萌面孔
+ * @param screen OLED_SCREEN_L (屏幕2, 左) 或 OLED_SCREEN_R (屏幕1, 右)
  */
 static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
                                   int8_t look_x, int8_t look_y,
@@ -244,8 +246,8 @@ static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
     /* --- 顶部精致标题胶囊 --- */
     OLED_FillRect(0, 0, 128, 9, OLED_COLOR_WHITE);
     OLED_ShowString(4, 1, MOOD_NAMES[current_mood], 8, OLED_COLOR_BLACK);
-    if (screen == 0) {
-        OLED_ShowString(96, 1, "FUMO-1", 8, OLED_COLOR_BLACK);
+    if (screen == OLED_SCREEN_L) {
+        OLED_ShowString(96, 1, "FUMO-L", 8, OLED_COLOR_BLACK);
     } else {
         if (auto_ai_mode) OLED_ShowString(96, 1, "AUTO", 8, OLED_COLOR_BLACK);
         else              OLED_ShowString(96, 1, "MANU", 8, OLED_COLOR_BLACK);
@@ -349,11 +351,11 @@ static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
             /* 比耶: ᗜ ֊ ᗜ 嘴角上扬，比出剪刀手 ✌ */
             OLED_DrawLine(mouth_x - 4, mouth_y + 1, mouth_x + 4, mouth_y + 1, OLED_COLOR_WHITE);
             OLED_DrawPoint(mouth_x + 5, mouth_y, OLED_COLOR_WHITE);
-            if (screen == 0) {
-                /* 屏幕 1: 靠右侧比耶 ✌ */
+            if (screen == OLED_SCREEN_L) {
+                /* 物理左屏 (屏幕2): 右手朝内侧比耶 ✌ */
                 Draw_Peace_Hand(right_eye_x + look_x + eye_w + 3, mouth_y - 10, 0);
             } else {
-                /* 屏幕 2: 靠左侧对称比耶 ✌ */
+                /* 物理右屏 (屏幕1): 左手朝内侧对称比耶 ✌ */
                 Draw_Peace_Hand(left_eye_x + look_x - 14, mouth_y - 10, 1);
             }
             break;
@@ -385,7 +387,7 @@ static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
 
     /* --- 底部快捷提示 --- */
     OLED_DrawLine(0, 52, 127, 52, OLED_COLOR_WHITE);
-    if (screen == 0) {
+    if (screen == OLED_SCREEN_L) {
         OLED_ShowString(2, 54, "K1/2:Mood  K3:Poke", 8, OLED_COLOR_WHITE);
     } else {
         OLED_ShowString(2, 54, "K4:Mode [TWIN] 80FPS", 8, OLED_COLOR_WHITE);
@@ -393,7 +395,9 @@ static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
 }
 
 /**
- * @brief 渲染跨屏合体大脸冷脸萌 (MERGE 模式: 左屏左眼，右屏右眼，嘴巴中缝相连)
+ * @brief 渲染跨屏合体大脸冷脸萌 (MERGE 模式)
+ *        屏幕2 (OLED_SCREEN_L) 在左侧 -> 显示左半脸
+ *        屏幕1 (OLED_SCREEN_R) 在右侧 -> 显示右半脸
  */
 static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
                                   int8_t look_x, int8_t look_y,
@@ -405,40 +409,45 @@ static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
     /* 顶部标题栏 */
     OLED_FillRect(0, 0, 128, 9, OLED_COLOR_WHITE);
     OLED_ShowString(4, 1, MOOD_NAMES[current_mood], 8, OLED_COLOR_BLACK);
-    if (screen == 0) OLED_ShowString(96, 1, "LEFT", 8, OLED_COLOR_BLACK);
-    else             OLED_ShowString(96, 1, "RIGHT", 8, OLED_COLOR_BLACK);
+    if (screen == OLED_SCREEN_L) {
+        OLED_ShowString(96, 1, "LEFT", 8, OLED_COLOR_BLACK);
+    } else {
+        OLED_ShowString(96, 1, "RIGHT", 8, OLED_COLOR_BLACK);
+    }
 
-    /* 大眼坐标 (适度放大至 26x20，依然保持空心 ᗜ 呆萌美感) */
-    uint8_t eye_x = (screen == 0) ? (68 + look_x) : (38 + look_x);
+    /* 大眼坐标 (物理左屏靠右放，物理右屏靠左放，贴近中缝无缝成对) */
+    uint8_t eye_x = (screen == OLED_SCREEN_L) ? (68 + look_x) : (38 + look_x);
     uint8_t eye_y = 18 + look_y;
 
     if (current_mood == MOOD_SLEEP) {
         /* 闭眼曲线 */
         OLED_DrawLine(eye_x, eye_y + 16, eye_x + 22, eye_y + 16, OLED_COLOR_WHITE);
         OLED_DrawLine(eye_x, eye_y + 17, eye_x + 22, eye_y + 17, OLED_COLOR_WHITE);
-        if (screen == 1) {
+        if (screen == OLED_SCREEN_R) {
             uint8_t zy = (frame_tick / 4) % 20;
             OLED_ShowString(104, 30 - zy, "z", 8, OLED_COLOR_WHITE);
             if (zy > 6) OLED_ShowString(112, 30 - zy - 6, "Z", 8, OLED_COLOR_WHITE);
         }
     } else if (current_mood == MOOD_FLIP_TABLE) {
-        /* 闭眼愤怒 */
-        if (screen == 0) {
+        /* 爆发掀桌 */
+        if (screen == OLED_SCREEN_L) {
+            /* 左半脸: 左眼 > 与 左手 ╯ */
             OLED_DrawLine(eye_x + 2, eye_y + 4, eye_x + 18, eye_y + 11, OLED_COLOR_WHITE);
             OLED_DrawLine(eye_x + 18, eye_y + 11, eye_x + 2, eye_y + 18, OLED_COLOR_WHITE);
             OLED_DrawLine(20, eye_y + 18, 30, eye_y + 6, OLED_COLOR_WHITE);
         } else {
+            /* 右半脸: 右眼 < 与 右手 ╯ 及飞舞桌子 ╧╧ */
             OLED_DrawLine(eye_x + 18, eye_y + 4, eye_x + 2, eye_y + 11, OLED_COLOR_WHITE);
             OLED_DrawLine(eye_x + 2, eye_y + 11, eye_x + 18, eye_y + 18, OLED_COLOR_WHITE);
             OLED_DrawLine(eye_x + 26, eye_y + 18, eye_x + 36, eye_y + 6, OLED_COLOR_WHITE);
             Draw_Flying_Table(90, 14, frame_tick / 8);
         }
     } else {
-        /* 空心大眼 ᗜ */
+        /* 纯空心大眼 ᗜ */
         Draw_Fumo_Eye(eye_x, eye_y, is_blinking ? blink_depth : 0);
 
         if (current_mood == MOOD_ANGRY) {
-            if (screen == 0) {
+            if (screen == OLED_SCREEN_L) {
                 OLED_DrawLine(eye_x, eye_y - 2, eye_x + 22, eye_y + 2, OLED_COLOR_WHITE);
             } else {
                 OLED_DrawLine(eye_x, eye_y + 2, eye_x + 22, eye_y - 2, OLED_COLOR_WHITE);
@@ -447,10 +456,10 @@ static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
         }
     }
 
-    /* 中间贯通嘴巴 (左屏画到最右缘，右屏画从最左缘起始，无缝拼接) */
+    /* 中间贯通嘴巴 (左屏画到最右边缘，右屏从最左边缘起始，物理拼合严丝合缝) */
     uint8_t mouth_y = 38 + look_y;
-    if (screen == 0) {
-        /* 左半嘴 */
+    if (screen == OLED_SCREEN_L) {
+        /* 左半嘴 (延伸至左屏右边界) */
         OLED_DrawLine(118, mouth_y, 127, mouth_y, OLED_COLOR_WHITE);
         OLED_DrawLine(118, mouth_y + 1, 127, mouth_y + 1, OLED_COLOR_WHITE);
         if (current_mood == MOOD_SHY || current_mood == MOOD_KAWAII || current_mood == MOOD_HAPPY) {
@@ -460,7 +469,7 @@ static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
             OLED_ShowChar(10, eye_y + 2, '(', 16, OLED_COLOR_WHITE);
         }
     } else {
-        /* 右半嘴 */
+        /* 右半嘴 (从右屏左边界延伸) */
         OLED_DrawLine(0, mouth_y, 10, mouth_y, OLED_COLOR_WHITE);
         OLED_DrawLine(0, mouth_y + 1, 10, mouth_y + 1, OLED_COLOR_WHITE);
         if (current_mood == MOOD_SHY || current_mood == MOOD_KAWAII || current_mood == MOOD_HAPPY) {
@@ -475,7 +484,11 @@ static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
     }
 
     OLED_DrawLine(0, 52, 127, 52, OLED_COLOR_WHITE);
-    OLED_ShowString(2, 54, "K4:Mode [MERGE] 80FPS", 8, OLED_COLOR_WHITE);
+    if (screen == OLED_SCREEN_L) {
+        OLED_ShowString(2, 54, "K1/2:Mood  K3:Poke", 8, OLED_COLOR_WHITE);
+    } else {
+        OLED_ShowString(2, 54, "K4:Mode [MERGE] 80FPS", 8, OLED_COLOR_WHITE);
+    }
 }
 
 int main(void)
@@ -489,7 +502,7 @@ int main(void)
     OLED_SetDelay(0); /* 80+ FPS 极限刷新 */
 
     uint8_t current_mood   = MOOD_NORMAL;
-    uint8_t display_mode   = DISPLAY_MODE_TWIN; /* 默认双子冷脸萌模式，最呆萌治愈 */
+    uint8_t display_mode   = DISPLAY_MODE_TWIN; /* 默认双子冷脸萌模式 */
     uint8_t auto_ai_mode   = 1;
     uint32_t next_mood_ms  = MOOD_HOLD_BASE_MS;
 
@@ -554,7 +567,7 @@ int main(void)
             else                current_mood = MOOD_POUT;
         }
 
-        /* 独立注视微动周期 (每隔 2.5~5 秒自然向四周张望，神态生动) */
+        /* 独立注视微动周期 */
         if (g_ms_ticks > next_look_ms && current_mood != MOOD_SLEEP && current_mood != MOOD_FLIP_TABLE) {
             next_look_ms = g_ms_ticks + 2500 + (Rand() % 2500);
             target_x = (int8_t)(Rand() % 5) - 2;
@@ -577,7 +590,7 @@ int main(void)
             }
         }
 
-        /* 暗爽两段式表情动画: ( ᗜ _ ᗜ ) 缓慢变为 ( ᗜ ֊ ᗜ ) */
+        /* 暗爽两段式表情动画 */
         if (current_mood == MOOD_SMUG) {
             if ((frame_tick % 60) == 0) {
                 smug_phase = !smug_phase;
@@ -607,18 +620,22 @@ int main(void)
         OLED_ClearScreen(OLED_SCREEN_R);
 
         if (display_mode == DISPLAY_MODE_TWIN) {
-            /* 双子萌模式: 两块屏幕各一只完整呆萌冷脸萌，相互陪伴互动！*/
-            /* 屏幕 0 (左屏) */
-            Draw_Single_Fumo_Face(0, current_mood, look_x, look_y,
+            /* 双子萌模式:
+             * 物理左屏 (屏幕2: OLED_SCREEN_L): 绘制 Fumo-L
+             * 物理右屏 (屏幕1: OLED_SCREEN_R): 绘制 Fumo-R
+             */
+            Draw_Single_Fumo_Face(OLED_SCREEN_L, current_mood, look_x, look_y,
                                   is_blinking, blink_depth, smug_phase, frame_tick, auto_ai_mode);
-            /* 屏幕 1 (右屏, 注视有微小的对称差异，更有互动感) */
-            Draw_Single_Fumo_Face(1, current_mood, -look_x, look_y,
+            Draw_Single_Fumo_Face(OLED_SCREEN_R, current_mood, -look_x, look_y,
                                   is_blinking, blink_depth, smug_phase, frame_tick, auto_ai_mode);
         } else {
-            /* 跨屏合体大脸模式: 左右两屏拼接成一张无缝超宽大冷脸 */
-            Draw_Merged_Fumo_Face(0, current_mood, look_x, look_y,
+            /* 跨屏合体大脸模式 (K4 切换):
+             * 物理左屏 (屏幕2: OLED_SCREEN_L): 绘制左半脸
+             * 物理右屏 (屏幕1: OLED_SCREEN_R): 绘制右半脸
+             */
+            Draw_Merged_Fumo_Face(OLED_SCREEN_L, current_mood, look_x, look_y,
                                   is_blinking, blink_depth, smug_phase, frame_tick);
-            Draw_Merged_Fumo_Face(1, current_mood, look_x, look_y,
+            Draw_Merged_Fumo_Face(OLED_SCREEN_R, current_mood, look_x, look_y,
                                   is_blinking, blink_depth, smug_phase, frame_tick);
         }
 
