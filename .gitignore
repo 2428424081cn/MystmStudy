@@ -1,0 +1,29 @@
+# Build output directories
+Debug/
+Release/
+build/
+bin/
+obj/
+
+# CMake artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+.ninja_*
+
+# Binary & Output files
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.obj
+*.d
+
+# IDE & Editor temporary files
+.metadata/
+.vs/
+.vscode/
+*.swp
+*~
