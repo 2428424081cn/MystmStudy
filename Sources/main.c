@@ -13,6 +13,7 @@
 #include "oled.h"
 #include "key.h"
 #include "racing_assets.h"
+#include "fumo_boss_assets.h"
 
 /* 寄存器定义 */
 #define RCC_BASE            (0x40021000UL)
@@ -87,10 +88,11 @@ static uint16_t Rand(void)
  * ========================================================================= */
 #define MODE_FUMO_TWIN    0   /* 1. 双子冷脸萌 (双屏各一只完整萌宠) */
 #define MODE_FUMO_MERGE   1   /* 2. 跨屏合体大脸 (双屏拼合超宽冷脸) */
-#define MODE_RACING       2   /* 3. 极速赛车游戏 (右屏赛道狂飙 + 左屏仪表与Fumo陪驾) */
-#define MODE_TOTAL_COUNT  3
+#define MODE_FUMO_BOSS    2   /* 3. 墨镜大佬秀场 (全屏震撼像素艺术 + 动效) */
+#define MODE_RACING       3   /* 4. 极速赛车游戏 (右屏赛道狂飙 + 左屏墨镜Fumo仪表盘) */
+#define MODE_TOTAL_COUNT  4
 
-/* 10 种经典冷脸萌表情定义 */
+/* 11 种经典冷脸萌表情定义 */
 #define MOOD_NORMAL     0
 #define MOOD_SHY        1
 #define MOOD_HAPPY      2
@@ -101,7 +103,8 @@ static uint16_t Rand(void)
 #define MOOD_PEACE      7
 #define MOOD_KAWAII     8
 #define MOOD_SMUG       9
-#define MOOD_TOTAL      10
+#define MOOD_BOSS       10
+#define MOOD_TOTAL      11
 
 #define MOOD_HOLD_BASE_MS   8000
 #define MOOD_HOLD_RAND_MS   6000
@@ -116,7 +119,8 @@ static const char *MOOD_NAMES[MOOD_TOTAL] = {
     "7.SLEEP   [zZZ]",
     "8.PEACE   [^o^]v",
     "9.KAWAII  [:3]",
-    "10.SMUG   [~_~]"
+    "10.SMUG   [~_~]",
+    "11.BOSS   [B-)]"
 };
 
 /* 纯空心 ᗜ 边框点阵 */
@@ -215,6 +219,17 @@ static void Draw_Single_Fumo_Face(uint8_t screen, uint8_t current_mood,
     const uint8_t right_eye_x = 82;
     const uint8_t eye_y       = 14;
     const uint8_t eye_w       = 22;
+
+    if (current_mood == MOOD_BOSS) {
+        /* 居中渲染 64x64 酷炫墨镜大佬冷脸萌 */
+        OLED_DrawBitmap(32, 0, FUMO_BOSS_64x64, 64, 64, OLED_COLOR_WHITE);
+        uint8_t bar_h = 10 + ((frame_tick * 3 + (screen ? 15 : 0)) % 36);
+        OLED_DrawRect(8, 60 - bar_h, 10, bar_h, OLED_COLOR_WHITE);
+        OLED_DrawRect(110, 60 - bar_h, 10, bar_h, OLED_COLOR_WHITE);
+        OLED_ShowString(2, 2, "BOSS", 8, OLED_COLOR_WHITE);
+        OLED_ShowString(96, 2, "THUG", 8, OLED_COLOR_WHITE);
+        return;
+    }
 
     if (current_mood == MOOD_SLEEP) {
         OLED_DrawLine(left_eye_x + 2, eye_y + 14, left_eye_x + eye_w - 2, eye_y + 14, OLED_COLOR_WHITE);
@@ -325,6 +340,19 @@ static void Draw_Merged_Fumo_Face(uint8_t screen, uint8_t current_mood,
     OLED_ShowString(4, 1, MOOD_NAMES[current_mood], 8, OLED_COLOR_BLACK);
     if (screen == OLED_SCREEN_L) OLED_ShowString(96, 1, "LEFT", 8, OLED_COLOR_BLACK);
     else                         OLED_ShowString(96, 1, "RIGHT", 8, OLED_COLOR_BLACK);
+
+    if (current_mood == MOOD_BOSS) {
+        if (screen == OLED_SCREEN_L) {
+            OLED_DrawBitmap(32, 0, FUMO_BOSS_64x64, 64, 64, OLED_COLOR_WHITE);
+            OLED_ShowString(2, 2, "64x64", 8, OLED_COLOR_WHITE);
+            OLED_ShowString(98, 2, "BOSS", 8, OLED_COLOR_WHITE);
+        } else {
+            OLED_DrawRect(46, 12, 36, 36, OLED_COLOR_WHITE);
+            OLED_DrawBitmap(48, 14, FUMO_BOSS_32x32, 32, 32, OLED_COLOR_WHITE);
+            OLED_ShowString(18, 52, "ORIGIN 32x32", 8, OLED_COLOR_WHITE);
+        }
+        return;
+    }
 
     uint8_t eye_x = (screen == OLED_SCREEN_L) ? (68 + look_x) : (38 + look_x);
     uint8_t eye_y = 18 + look_y;
@@ -683,21 +711,75 @@ static void Racing_Render_Track(void)
 }
 
 /**
- * @brief 渲染左屏：科技仪表盘 + Fumo 副驾驶灵魂联动
+ * @brief 专属展示模式：墨镜大佬秀场 (物理左屏 64x64 震撼高清 + 物理右屏 32x32 像素艺术画廊)
+ */
+static void Boss_Render_Showcase(uint32_t frame_tick)
+{
+    /* 物理左屏 (屏幕2: PB11/PB8): 64x64 墨镜大佬震撼登场 + 赛博律动动效 */
+    OLED_SelectScreen(OLED_SCREEN_L);
+    OLED_DrawBitmap(32, 0, FUMO_BOSS_64x64, 64, 64, OLED_COLOR_WHITE);
+
+    /* 左右动效律动柱 */
+    for (uint8_t i = 0; i < 4; i++) {
+        uint8_t h1 = 10 + ((frame_tick * 3 + i * 8) % 45);
+        uint8_t h2 = 10 + ((frame_tick * 3 + (3 - i) * 8) % 45);
+        OLED_FillRect(4 + i * 6, 62 - h1, 4, h1, OLED_COLOR_WHITE);
+        OLED_FillRect(102 + i * 6, 62 - h2, 4, h2, OLED_COLOR_WHITE);
+    }
+    OLED_DrawLine(0, 0, 31, 0, OLED_COLOR_WHITE);
+    OLED_DrawLine(96, 0, 127, 0, OLED_COLOR_WHITE);
+    OLED_ShowString(2, 2, "THUG", 8, OLED_COLOR_WHITE);
+    OLED_ShowString(100, 2, "LIFE", 8, OLED_COLOR_WHITE);
+
+    /* 物理右屏 (屏幕1: PB6/PB7): 32x32 像素艺术画廊 / 原图点阵展示 */
+    OLED_SelectScreen(OLED_SCREEN_R);
+    OLED_FillRect(0, 0, 128, 9, OLED_COLOR_WHITE);
+    OLED_ShowString(4, 1, "PIXEL ART 32x32", 8, OLED_COLOR_BLACK);
+    OLED_ShowString(98, 1, "80FPS", 8, OLED_COLOR_BLACK);
+
+    /* 居中展示 32x32 原始墨镜冷脸萌 */
+    OLED_DrawRect(46, 12, 36, 36, OLED_COLOR_WHITE);
+    OLED_DrawBitmap(48, 14, FUMO_BOSS_32x32, 32, 32, OLED_COLOR_WHITE);
+
+    /* 艺术名牌与信息 */
+    OLED_ShowString(16, 52, "FUMO BOSS [B-)]", 8, OLED_COLOR_WHITE);
+    OLED_DrawLine(0, 62, 127, 62, OLED_COLOR_WHITE);
+}
+
+/**
+ * @brief 渲染左屏：64x64 酷炫墨镜冷脸萌 + 科技仪表盘实时联控
  */
 static void Racing_Render_Dashboard(void)
 {
     OLED_SelectScreen(OLED_SCREEN_L);
 
-    /* --- 1. 顶部标题 --- */
-    OLED_FillRect(0, 0, 128, 9, OLED_COLOR_WHITE);
-    OLED_ShowString(4, 1, "RACING DASHBOARD", 8, OLED_COLOR_BLACK);
-    OLED_ShowString(98, 1, "80FPS", 8, OLED_COLOR_BLACK);
+    /* --- 1. 左半屏 (X=0..63, Y=0..63): 完整的 64x64 墨镜大佬冷脸萌 --- */
+    OLED_DrawBitmap(0, 0, FUMO_BOSS_64x64, 64, 64, OLED_COLOR_WHITE);
 
-    /* --- 2. 速度与仪表数据展示 --- */
-    /* 速度大字显示 */
-    OLED_ShowNum(4, 12, g_player_speed, 3, 16, OLED_COLOR_WHITE);
-    OLED_ShowString(30, 18, "KM/H", 8, OLED_COLOR_WHITE);
+    /* 赛车状态动态滤镜叠加 */
+    if (g_is_crashed) {
+        /* 撞车翻车: 覆盖大红警报贴纸与愤怒怒筋 */
+        OLED_FillRect(2, 2, 48, 10, OLED_COLOR_WHITE);
+        OLED_ShowString(4, 3, "!CRASH!", 8, OLED_COLOR_BLACK);
+        Draw_Anger_Mark(46, 16);
+    } else if (g_is_boosting || g_player_speed > 185) {
+        /* 氮气冲刺: 炫酷速度风流线 */
+        uint8_t wind = (g_ms_ticks / 15) % 8;
+        OLED_DrawLine(2 + wind, 4, 16 + wind, 4, OLED_COLOR_WHITE);
+        OLED_DrawLine(6 + wind, 58, 22 + wind, 58, OLED_COLOR_WHITE);
+    }
+
+    /* 中部分割竖线 */
+    OLED_DrawLine(63, 0, 63, 63, OLED_COLOR_WHITE);
+
+    /* --- 2. 右半屏 (X=64..127, Y=0..63): 科技仪表数据 --- */
+    /* 顶部黑底反白标题 */
+    OLED_FillRect(64, 0, 64, 9, OLED_COLOR_WHITE);
+    OLED_ShowString(66, 1, "FUMO BOSS", 8, OLED_COLOR_BLACK);
+
+    /* 速度大字显示 (16点阵) */
+    OLED_ShowNum(66, 11, g_player_speed, 3, 16, OLED_COLOR_WHITE);
+    OLED_ShowString(94, 17, "KM/H", 8, OLED_COLOR_WHITE);
 
     /* 档位判断与显示 */
     uint8_t gear = 1;
@@ -708,75 +790,22 @@ static void Racing_Render_Dashboard(void)
     else if (g_player_speed >= 35)  gear = 2;
     if (g_is_crashed) gear = 0;
 
-    OLED_ShowString(68, 12, "G:", 8, OLED_COLOR_WHITE);
-    if (gear == 0) OLED_ShowChar(80, 12, 'R', 8, OLED_COLOR_WHITE);
-    else           OLED_ShowChar(80, 12, '0' + gear, 8, OLED_COLOR_WHITE);
+    OLED_ShowString(66, 28, "G:", 8, OLED_COLOR_WHITE);
+    if (gear == 0) OLED_ShowChar(78, 28, 'R', 8, OLED_COLOR_WHITE);
+    else           OLED_ShowChar(78, 28, '0' + gear, 8, OLED_COLOR_WHITE);
 
     /* 得分展示 */
-    OLED_ShowString(68, 21, "S:", 8, OLED_COLOR_WHITE);
-    OLED_ShowNum(80, 21, g_race_score, 6, 8, OLED_COLOR_WHITE);
+    OLED_ShowString(66, 37, "S:", 8, OLED_COLOR_WHITE);
+    OLED_ShowNum(78, 37, g_race_score, 6, 8, OLED_COLOR_WHITE);
 
-    /* 氮气能量进度条 (NITRO) */
-    OLED_ShowString(4, 30, "NITRO", 8, OLED_COLOR_WHITE);
-    OLED_DrawRect(36, 30, 88, 7, OLED_COLOR_WHITE);
-    uint8_t bar_w = (g_nitro_level * 84) / 100;
-    if (bar_w > 84) bar_w = 84;
+    /* 氮气槽 (NITRO) */
+    OLED_ShowString(66, 46, "NITRO", 8, OLED_COLOR_WHITE);
+    OLED_DrawRect(66, 55, 60, 7, OLED_COLOR_WHITE);
+    uint8_t bar_w = (g_nitro_level * 56) / 100;
+    if (bar_w > 56) bar_w = 56;
     if (bar_w > 0) {
-        OLED_FillRect(38, 32, bar_w, 3, OLED_COLOR_WHITE);
+        OLED_FillRect(68, 57, bar_w, 3, OLED_COLOR_WHITE);
     }
-
-    /* 中部分割线 */
-    OLED_DrawLine(0, 39, 127, 39, OLED_COLOR_WHITE);
-
-    /* --- 3. Fumo 冷脸萌副驾驶联动面孔 --- */
-    const uint8_t fumo_x = 44;
-    const uint8_t fumo_y = 42;
-
-    if (g_is_crashed) {
-        /* 撞车翻车: Fumo 愤怒掀桌爆发 ( ╯－︿－)╯╧╧ */
-        OLED_ShowString(6, 42, "FLIP!", 8, OLED_COLOR_WHITE);
-        /* 左眼 > */
-        OLED_DrawLine(fumo_x + 4, fumo_y + 2, fumo_x + 10, fumo_y + 5, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 10, fumo_y + 5, fumo_x + 4, fumo_y + 8, OLED_COLOR_WHITE);
-        /* 右眼 < */
-        OLED_DrawLine(fumo_x + 22, fumo_y + 2, fumo_x + 16, fumo_y + 5, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 16, fumo_y + 5, fumo_x + 22, fumo_y + 8, OLED_COLOR_WHITE);
-        /* 嘴巴 －︿－ */
-        OLED_DrawLine(fumo_x + 11, fumo_y + 7, fumo_x + 13, fumo_y + 5, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 13, fumo_y + 5, fumo_x + 15, fumo_y + 7, OLED_COLOR_WHITE);
-        /* 飞起的微型桌子 */
-        Draw_Flying_Table(fumo_x + 28, fumo_y + 2, (g_crash_tick / 4));
-        /* 怒筋 💢 */
-        Draw_Anger_Mark(fumo_x + 48, fumo_y);
-    } else if (g_is_boosting || g_player_speed > 185) {
-        /* 极速狂飙/氮气冲刺: Fumo 兴奋大喜 ᗜ ᴗ ᗜ，伴随风阻流线 */
-        Draw_Fumo_Eye(fumo_x, fumo_y, 0);
-        Draw_Fumo_Eye(fumo_x + 24, fumo_y, 0);
-        /* 微笑嘴 ᴗ */
-        OLED_DrawLine(fumo_x + 17, fumo_y + 11, fumo_x + 20, fumo_y + 13, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 20, fumo_y + 13, fumo_x + 23, fumo_y + 13, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 23, fumo_y + 13, fumo_x + 26, fumo_y + 11, OLED_COLOR_WHITE);
-        /* 左右急速气流线 */
-        uint8_t wind_offset = (g_ms_ticks / 20) % 8;
-        OLED_DrawLine(10 + wind_offset, 46, 24 + wind_offset, 46, OLED_COLOR_WHITE);
-        OLED_DrawLine(6 + wind_offset, 51, 18 + wind_offset, 51, OLED_COLOR_WHITE);
-        OLED_DrawLine(96 + wind_offset, 46, 110 + wind_offset, 46, OLED_COLOR_WHITE);
-        OLED_DrawLine(102 + wind_offset, 51, 116 + wind_offset, 51, OLED_COLOR_WHITE);
-    } else {
-        /* 正常巡航: 标志性戴墨镜的酷酷冷脸萌 ( ᗜ - ᗜ ) */
-        Draw_Fumo_Eye(fumo_x, fumo_y, 0);
-        Draw_Fumo_Eye(fumo_x + 24, fumo_y, 0);
-        /* 平板冷嘴 */
-        OLED_DrawLine(fumo_x + 18, fumo_y + 12, fumo_x + 24, fumo_y + 12, OLED_COLOR_WHITE);
-        /* 赛车酷炫墨镜镜框 (跨过两只眼睛) */
-        OLED_DrawLine(fumo_x - 1, fumo_y + 4, fumo_x + 46, fumo_y + 4, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x - 1, fumo_y + 5, fumo_x + 46, fumo_y + 5, OLED_COLOR_WHITE);
-        OLED_DrawLine(fumo_x + 21, fumo_y + 6, fumo_x + 24, fumo_y + 6, OLED_COLOR_WHITE);
-    }
-
-    /* 底部操作指引 */
-    OLED_DrawLine(0, 56, 127, 56, OLED_COLOR_WHITE);
-    OLED_ShowString(2, 57, "K1/2:Steer K3:Nitro K4:Exit", 8, OLED_COLOR_WHITE);
 }
 
 /* =========================================================================
@@ -854,13 +883,14 @@ int main(void)
             if (auto_ai_mode && (g_ms_ticks > next_mood_ms)) {
                 uint32_t hold_base = (current_mood == MOOD_SLEEP) ? 14000 : MOOD_HOLD_BASE_MS;
                 next_mood_ms = g_ms_ticks + hold_base + (Rand() % MOOD_HOLD_RAND_MS);
-                uint8_t dice = Rand() % 10;
+                uint8_t dice = Rand() % 11;
                 if (dice <= 3) current_mood = MOOD_NORMAL;
                 else if (dice == 4) current_mood = MOOD_HAPPY;
                 else if (dice == 5) current_mood = MOOD_KAWAII;
                 else if (dice == 6) current_mood = MOOD_SHY;
                 else if (dice == 7) current_mood = MOOD_PEACE;
                 else if (dice == 8) current_mood = MOOD_SMUG;
+                else if (dice == 9) current_mood = MOOD_BOSS;
                 else                current_mood = MOOD_POUT;
             }
 
@@ -922,14 +952,19 @@ int main(void)
                                       is_blinking, blink_depth, smug_phase, frame_tick);
             }
 
+        } else if (current_app_mode == MODE_FUMO_BOSS) {
+            /* ================= 模式三: 墨镜大佬秀场逻辑 ================= */
+            OLED_ClearScreen(OLED_SCREEN_L);
+            OLED_ClearScreen(OLED_SCREEN_R);
+            Boss_Render_Showcase(frame_tick);
         } else {
-            /* ================= 模式三: 极速赛车游戏逻辑 ================= */
+            /* ================= 模式四: 极速赛车游戏逻辑 ================= */
             Racing_Update(key);
 
             OLED_ClearScreen(OLED_SCREEN_L);
             OLED_ClearScreen(OLED_SCREEN_R);
 
-            /* 物理左屏 (屏幕2: PB11/PB8): 渲染赛车仪表盘与 Fumo 陪驾反应 */
+            /* 物理左屏 (屏幕2: PB11/PB8): 渲染 64x64 墨镜 Fumo 与仪表盘 */
             Racing_Render_Dashboard();
 
             /* 物理右屏 (屏幕1: PB6/PB7): 渲染高速公路主赛道视界与车辆 */
