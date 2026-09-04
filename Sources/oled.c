@@ -7,19 +7,29 @@
 
 #define GPIOB_BASE    (0x40010C00UL)
 #define GPIOB_CRL     (*(volatile uint32_t *)(GPIOB_BASE + 0x00UL))
+#define GPIOB_CRH     (*(volatile uint32_t *)(GPIOB_BASE + 0x04UL))
 #define GPIOB_BSRR    (*(volatile uint32_t *)(GPIOB_BASE + 0x10UL))
 
-/* 引脚定义: SCL = PB6, SDA = PB7 */
-#define SCL_H()  (GPIOB_BSRR = (1UL << 6))
-#define SCL_L()  (GPIOB_BSRR = (1UL << (6 + 16)))
-#define SDA_H()  (GPIOB_BSRR = (1UL << 7))
-#define SDA_L()  (GPIOB_BSRR = (1UL << (7 + 16)))
+/* 引脚定义:
+ * 屏幕1 (左眼): SCL1 = PB6,  SDA1 = PB7
+ * 屏幕2 (右眼): SCL2 = PB11, SDA2 = PB8
+ */
+#define SCL1_H()  (GPIOB_BSRR = (1UL << 6))
+#define SCL1_L()  (GPIOB_BSRR = (1UL << (6 + 16)))
+#define SDA1_H()  (GPIOB_BSRR = (1UL << 7))
+#define SDA1_L()  (GPIOB_BSRR = (1UL << (7 + 16)))
 
-/* 显存缓冲区: 128 x 64 位 = 8 页 x 128 字节 = 1024 字节 */
-static uint8_t OLED_Gram[8][128];
+#define SCL2_H()  (GPIOB_BSRR = (1UL << 11))
+#define SCL2_L()  (GPIOB_BSRR = (1UL << (11 + 16)))
+#define SDA2_H()  (GPIOB_BSRR = (1UL << 8))
+#define SDA2_L()  (GPIOB_BSRR = (1UL << (8 + 16)))
 
-/* 软件微延时周期 (可动态调节) */
-static volatile uint8_t g_i2c_delay = 1;
+/* 双屏独立显存缓冲区: 2 x 8页 x 128字节 = 2048 字节 */
+static uint8_t OLED_Gram[2][8][128];
+static uint8_t g_current_screen = OLED_SCREEN_L;
+
+/* 软件微延时周期 */
+static volatile uint8_t g_i2c_delay = 0;
 
 void OLED_SetDelay(uint8_t delay)
 {
@@ -33,57 +43,88 @@ static inline void I2C_Delay(void)
     }
 }
 
-static void I2C_Start(void)
+static inline void SCL_Set(uint8_t ch, uint8_t level)
 {
-    SDA_H();
-    SCL_H();
+    if (ch == 0) {
+        if (level) SCL1_H(); else SCL1_L();
+    } else if (ch == 1) {
+        if (level) SCL2_H(); else SCL2_L();
+    } else {
+        if (level) { SCL1_H(); SCL2_H(); }
+        else       { SCL1_L(); SCL2_L(); }
+    }
+}
+
+static inline void SDA_Set(uint8_t ch, uint8_t level)
+{
+    if (ch == 0) {
+        if (level) SDA1_H(); else SDA1_L();
+    } else if (ch == 1) {
+        if (level) SDA2_H(); else SDA2_L();
+    } else {
+        if (level) { SDA1_H(); SDA2_H(); }
+        else       { SDA1_L(); SDA2_L(); }
+    }
+}
+
+static void I2C_Start(uint8_t ch)
+{
+    SDA_Set(ch, 1);
+    SCL_Set(ch, 1);
     I2C_Delay();
-    SDA_L();
+    SDA_Set(ch, 0);
     I2C_Delay();
-    SCL_L();
+    SCL_Set(ch, 0);
     I2C_Delay();
 }
 
-static void I2C_Stop(void)
+static void I2C_Stop(uint8_t ch)
 {
-    SDA_L();
-    SCL_H();
+    SDA_Set(ch, 0);
+    SCL_Set(ch, 1);
     I2C_Delay();
-    SDA_H();
+    SDA_Set(ch, 1);
     I2C_Delay();
 }
 
-static void I2C_SendByte(uint8_t byte)
+static void I2C_SendByte(uint8_t ch, uint8_t byte)
 {
     for (uint8_t i = 0; i < 8; i++) {
-        if (byte & 0x80) {
-            SDA_H();
-        } else {
-            SDA_L();
-        }
+        SDA_Set(ch, (byte & 0x80) ? 1 : 0);
         I2C_Delay();
-        SCL_H();
+        SCL_Set(ch, 1);
         I2C_Delay();
-        SCL_L();
+        SCL_Set(ch, 0);
         I2C_Delay();
         byte <<= 1;
     }
-    /* 第 9 个时钟周期 ACK */
-    SDA_H();
+    /* ACK 第9周期 */
+    SDA_Set(ch, 1);
     I2C_Delay();
-    SCL_H();
+    SCL_Set(ch, 1);
     I2C_Delay();
-    SCL_L();
+    SCL_Set(ch, 0);
     I2C_Delay();
 }
 
-static void OLED_WriteCmd(uint8_t cmd)
+static void OLED_WriteCmd(uint8_t ch, uint8_t cmd)
 {
-    I2C_Start();
-    I2C_SendByte(0x78); /* I2C 7位地址 0x3C, 左移一位 0x78 */
-    I2C_SendByte(0x00); /* 写入命令 */
-    I2C_SendByte(cmd);
-    I2C_Stop();
+    I2C_Start(ch);
+    I2C_SendByte(ch, 0x78); /* 7位地址 0x3C << 1 */
+    I2C_SendByte(ch, 0x00); /* 命令模式 */
+    I2C_SendByte(ch, cmd);
+    I2C_Stop(ch);
+}
+
+void OLED_SelectScreen(uint8_t screen)
+{
+    if (screen > OLED_SCREEN_BOTH) screen = OLED_SCREEN_BOTH;
+    g_current_screen = screen;
+}
+
+uint8_t OLED_GetScreen(void)
+{
+    return g_current_screen;
 }
 
 void OLED_Init(void)
@@ -91,78 +132,105 @@ void OLED_Init(void)
     /* 1. 使能 GPIOB 时钟 */
     RCC_APB2ENR |= (1UL << 3);
 
-    /* 2. 配置 PB6, PB7 为通用推挽输出 50MHz (0x3) */
+    /* 2. 配置 PB6, PB7 为通用推挽输出 50MHz (CRL bits 31..24) */
     GPIOB_CRL &= ~(0xFFUL << 24);
     GPIOB_CRL |=  (0x33UL << 24);
 
-    SCL_H();
-    SDA_H();
+    /* 配置 PB8, PB11 为通用推挽输出 50MHz (CRH bits 3..0 及 15..12) */
+    GPIOB_CRH &= ~((0xFUL << 0) | (0xFUL << 12));
+    GPIOB_CRH |=  ((0x3UL << 0) | (0x3UL << 12));
 
-    /* 上电延时稳定 */
-    for (volatile int i = 0; i < 40000; i++) {
+    SCL1_H(); SDA1_H();
+    SCL2_H(); SDA2_H();
+
+    /* 上电稳定微延时 */
+    for (volatile int i = 0; i < 50000; i++) {
         __asm__ volatile ("nop");
     }
 
-    /* 3. SSD1306 初始化序列 */
-    OLED_WriteCmd(0xAE); /* 关闭显示 */
-    OLED_WriteCmd(0xD5); /* 设置显示时钟分频比/振荡器频率 */
-    OLED_WriteCmd(0xF0); /* 设置为最高振荡器频率 (最大化硬件刷新率) */
-    OLED_WriteCmd(0xA8); /* 设置多路复用率 */
-    OLED_WriteCmd(0x3F); /* 1/64 duty */
-    OLED_WriteCmd(0xD3); /* 设置显示偏移 */
-    OLED_WriteCmd(0x00);
-    OLED_WriteCmd(0x40); /* 设置显示起始行 (0) */
-    OLED_WriteCmd(0x8D); /* 电荷泵使能设置 */
-    OLED_WriteCmd(0x14); /* 开启电荷泵 (关键! 否则屏幕不亮) */
-    OLED_WriteCmd(0x20); /* 内存寻址模式 */
-    OLED_WriteCmd(0x00); /* 水平寻址模式 (允许单次 I2C 突发连续传输 1024 字节) */
-    OLED_WriteCmd(0xA1); /* 段重映射 (A0:左右反置, A1:正常) */
-    OLED_WriteCmd(0xC8); /* COM 扫描方向 (C0:上下反置, C8:正常) */
-    OLED_WriteCmd(0xDA); /* COM 引脚配置 */
-    OLED_WriteCmd(0x12);
-    OLED_WriteCmd(0x81); /* 对比度设置 */
-    OLED_WriteCmd(0xCF);
-    OLED_WriteCmd(0xD9); /* 预充电周期 */
-    OLED_WriteCmd(0xF1);
-    OLED_WriteCmd(0xDB); /* VCOMH 反选电平 */
-    OLED_WriteCmd(0x40);
-    OLED_WriteCmd(0xA4); /* 全局显示跟随 RAM */
-    OLED_WriteCmd(0xA6); /* 正常显示 (A7 为反色) */
-    OLED_WriteCmd(0xAF); /* 开启显示 */
+    /* 3. 同时初始化两块 SSD1306 OLED 屏幕 (ch = BOTH) */
+    uint8_t init_cmds[] = {
+        0xAE, /* 关闭显示 */
+        0xD5, 0xF0, /* 最高振荡器频率，极限刷新 */
+        0xA8, 0x3F, /* 1/64 duty */
+        0xD3, 0x00, /* 无显示偏移 */
+        0x40,       /* 起始行 0 */
+        0x8D, 0x14, /* 开启内部电荷泵 */
+        0x20, 0x00, /* 水平内存寻址模式 */
+        0xA1,       /* 段重映射 */
+        0xC8,       /* COM 输出反向扫描 */
+        0xDA, 0x12, /* COM 引脚配置 */
+        0x81, 0xCF, /* 对比度 */
+        0xD9, 0xF1, /* 预充电周期 */
+        0xDB, 0x40, /* VCOMH */
+        0xA4,       /* 全局跟随 RAM */
+        0xA6,       /* 正常显示模式 */
+        0xAF        /* 开启显示 */
+    };
 
-    OLED_Clear();
-    OLED_Update();
+    for (uint8_t i = 0; i < sizeof(init_cmds); i++) {
+        OLED_WriteCmd(OLED_SCREEN_BOTH, init_cmds[i]);
+    }
+
+    OLED_ClearScreen(0);
+    OLED_ClearScreen(1);
+    OLED_UpdateAll();
 }
 
-void OLED_Clear(void)
+void OLED_ClearScreen(uint8_t s)
 {
-    uint32_t *p32 = (uint32_t *)OLED_Gram;
+    if (s > 1) return;
+    uint32_t *p32 = (uint32_t *)OLED_Gram[s];
     for (uint16_t i = 0; i < 256; i++) {
         p32[i] = 0;
     }
 }
 
+void OLED_Clear(void)
+{
+    if (g_current_screen == OLED_SCREEN_BOTH) {
+        OLED_ClearScreen(0);
+        OLED_ClearScreen(1);
+    } else {
+        OLED_ClearScreen(g_current_screen);
+    }
+}
+
+void OLED_UpdateScreen(uint8_t s)
+{
+    if (s > 1) return;
+
+    OLED_WriteCmd(s, 0x21);
+    OLED_WriteCmd(s, 0x00);
+    OLED_WriteCmd(s, 0x7F);
+
+    OLED_WriteCmd(s, 0x22);
+    OLED_WriteCmd(s, 0x00);
+    OLED_WriteCmd(s, 0x07);
+
+    I2C_Start(s);
+    I2C_SendByte(s, 0x78);
+    I2C_SendByte(s, 0x40);
+    const uint8_t *ptr = (const uint8_t *)OLED_Gram[s];
+    for (uint16_t i = 0; i < 1024; i++) {
+        I2C_SendByte(s, *ptr++);
+    }
+    I2C_Stop(s);
+}
+
+void OLED_UpdateAll(void)
+{
+    OLED_UpdateScreen(0);
+    OLED_UpdateScreen(1);
+}
+
 void OLED_Update(void)
 {
-    /* 设置列地址范围: 0 ~ 127 */
-    OLED_WriteCmd(0x21);
-    OLED_WriteCmd(0x00);
-    OLED_WriteCmd(0x7F);
-
-    /* 设置页地址范围: 0 ~ 7 */
-    OLED_WriteCmd(0x22);
-    OLED_WriteCmd(0x00);
-    OLED_WriteCmd(0x07);
-
-    /* 单次 I2C 启动，连续突发传输整块 1024 字节显存 */
-    I2C_Start();
-    I2C_SendByte(0x78);
-    I2C_SendByte(0x40);
-    const uint8_t *ptr = (const uint8_t *)OLED_Gram;
-    for (uint16_t i = 0; i < 1024; i++) {
-        I2C_SendByte(*ptr++);
+    if (g_current_screen == OLED_SCREEN_BOTH) {
+        OLED_UpdateAll();
+    } else {
+        OLED_UpdateScreen(g_current_screen);
     }
-    I2C_Stop();
 }
 
 void OLED_DrawPoint(uint8_t x, uint8_t y, uint8_t color)
@@ -171,10 +239,15 @@ void OLED_DrawPoint(uint8_t x, uint8_t y, uint8_t color)
     uint8_t page = y / 8;
     uint8_t bit  = y % 8;
 
-    if (color) {
-        OLED_Gram[page][x] |=  (1 << bit);
+    if (g_current_screen == OLED_SCREEN_BOTH) {
+        for (uint8_t s = 0; s < 2; s++) {
+            if (color) OLED_Gram[s][page][x] |=  (1 << bit);
+            else       OLED_Gram[s][page][x] &= ~(1 << bit);
+        }
     } else {
-        OLED_Gram[page][x] &= ~(1 << bit);
+        uint8_t s = g_current_screen;
+        if (color) OLED_Gram[s][page][x] |=  (1 << bit);
+        else       OLED_Gram[s][page][x] &= ~(1 << bit);
     }
 }
 
@@ -219,13 +292,113 @@ void OLED_FillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t color)
     }
 }
 
+void OLED_DrawCircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
+{
+    int16_t x = 0;
+    int16_t y = r;
+    int16_t d = 3 - 2 * r;
+    while (x <= y) {
+        OLED_DrawPoint(x0 + x, y0 + y, color);
+        OLED_DrawPoint(x0 - x, y0 + y, color);
+        OLED_DrawPoint(x0 + x, y0 - y, color);
+        OLED_DrawPoint(x0 - x, y0 - y, color);
+        OLED_DrawPoint(x0 + y, y0 + x, color);
+        OLED_DrawPoint(x0 - y, y0 + x, color);
+        OLED_DrawPoint(x0 + y, y0 - x, color);
+        OLED_DrawPoint(x0 - y, y0 - x, color);
+        if (d < 0) {
+            d = d + 4 * x + 6;
+        } else {
+            d = d + 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+
+void OLED_FillCircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
+{
+    for (int16_t y = -r; y <= r; y++) {
+        for (int16_t x = -r; x <= r; x++) {
+            if (x * x + y * y <= r * r) {
+                OLED_DrawPoint(x0 + x, y0 + y, color);
+            }
+        }
+    }
+}
+
+void OLED_DrawRoundRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t r, uint8_t color)
+{
+    if (w == 0 || h == 0) return;
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+
+    OLED_DrawLine(x + r, y, x + w - r - 1, y, color);
+    OLED_DrawLine(x + r, y + h - 1, x + w - r - 1, y + h - 1, color);
+    OLED_DrawLine(x, y + r, x, y + h - r - 1, color);
+    OLED_DrawLine(x + w - 1, y + r, x + w - 1, y + h - r - 1, color);
+
+    int16_t cx_l = x + r;
+    int16_t cx_r = x + w - r - 1;
+    int16_t cy_t = y + r;
+    int16_t cy_b = y + h - r - 1;
+
+    int16_t fx = 0;
+    int16_t fy = r;
+    int16_t d  = 3 - 2 * r;
+    while (fx <= fy) {
+        OLED_DrawPoint(cx_l - fx, cy_t - fy, color);
+        OLED_DrawPoint(cx_l - fy, cy_t - fx, color);
+        OLED_DrawPoint(cx_r + fx, cy_t - fy, color);
+        OLED_DrawPoint(cx_r + fy, cy_t - fx, color);
+        OLED_DrawPoint(cx_l - fx, cy_b + fy, color);
+        OLED_DrawPoint(cx_l - fy, cy_b + fx, color);
+        OLED_DrawPoint(cx_r + fx, cy_b + fy, color);
+        OLED_DrawPoint(cx_r + fy, cy_b + fx, color);
+
+        if (d < 0) {
+            d += 4 * fx + 6;
+        } else {
+            d += 4 * (fx - fy) + 10;
+            fy--;
+        }
+        fx++;
+    }
+}
+
+void OLED_FillRoundRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t r, uint8_t color)
+{
+    if (w == 0 || h == 0) return;
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+
+    OLED_FillRect(x + r, y, w - 2 * r, h, color);
+    OLED_FillRect(x, y + r, r, h - 2 * r, color);
+    OLED_FillRect(x + w - r, y + r, r, h - 2 * r, color);
+
+    int16_t cx_l = x + r;
+    int16_t cx_r = x + w - r - 1;
+    int16_t cy_t = y + r;
+    int16_t cy_b = y + h - r - 1;
+
+    for (int16_t dy = 1; dy <= r; dy++) {
+        for (int16_t dx = 1; dx <= r; dx++) {
+            if (dx * dx + dy * dy <= r * r) {
+                OLED_DrawPoint(cx_l - dx, cy_t - dy, color);
+                OLED_DrawPoint(cx_r + dx, cy_t - dy, color);
+                OLED_DrawPoint(cx_l - dx, cy_b + dy, color);
+                OLED_DrawPoint(cx_r + dx, cy_b + dy, color);
+            }
+        }
+    }
+}
+
 void OLED_ShowChar(uint8_t x, uint8_t y, char chr, uint8_t size, uint8_t color)
 {
     if (chr < ' ' || chr > '~') chr = ' ';
     uint8_t c_idx = chr - ' ';
 
     if (size == 8) {
-        /* 6x8 字符 */
         for (uint8_t i = 0; i < 6; i++) {
             uint8_t temp = OLED_F6x8[c_idx][i];
             for (uint8_t j = 0; j < 8; j++) {
@@ -237,7 +410,6 @@ void OLED_ShowChar(uint8_t x, uint8_t y, char chr, uint8_t size, uint8_t color)
             }
         }
     } else {
-        /* 8x16 字符 */
         for (uint8_t i = 0; i < 8; i++) {
             uint8_t temp_up = OLED_F8x16[c_idx][i];
             uint8_t temp_dn = OLED_F8x16[c_idx][i + 8];
@@ -324,41 +496,6 @@ void OLED_DrawBitmap(uint8_t x, uint8_t y, const uint8_t *bmp, uint8_t w, uint8_
             uint8_t byte_val = bmp[j * byte_w + (i / 8)];
             if (byte_val & (0x80 >> (i % 8))) {
                 OLED_DrawPoint(x + i, y + j, color);
-            }
-        }
-    }
-}
-
-void OLED_DrawCircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
-{
-    int16_t x = 0;
-    int16_t y = r;
-    int16_t d = 3 - 2 * r;
-    while (x <= y) {
-        OLED_DrawPoint(x0 + x, y0 + y, color);
-        OLED_DrawPoint(x0 - x, y0 + y, color);
-        OLED_DrawPoint(x0 + x, y0 - y, color);
-        OLED_DrawPoint(x0 - x, y0 - y, color);
-        OLED_DrawPoint(x0 + y, y0 + x, color);
-        OLED_DrawPoint(x0 - y, y0 + x, color);
-        OLED_DrawPoint(x0 + y, y0 - x, color);
-        OLED_DrawPoint(x0 - y, y0 - x, color);
-        if (d < 0) {
-            d = d + 4 * x + 6;
-        } else {
-            d = d + 4 * (x - y) + 10;
-            y--;
-        }
-        x++;
-    }
-}
-
-void OLED_FillCircle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t color)
-{
-    for (int16_t y = -r; y <= r; y++) {
-        for (int16_t x = -r; x <= r; x++) {
-            if (x * x + y * y <= r * r) {
-                OLED_DrawPoint(x0 + x, y0 + y, color);
             }
         }
     }
